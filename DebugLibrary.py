@@ -27,8 +27,8 @@ from pygments.token import Token
 from robot import run_cli
 from robot.api import logger
 from robot.errors import ExecutionFailed, HandlerExecutionFailed
-from robot.libdocpkg.model import LibraryDoc
-from robot.libdocpkg.robotbuilder import KeywordDocBuilder, LibraryDocBuilder
+from robot.libdocpkg.model import LibraryDoc, KeywordDoc
+from robot.libdocpkg.robotbuilder import KeywordDocBuilder, LibraryDocBuilder, ResourceDocBuilder
 from robot.libraries import STDLIBS
 from robot.libraries.BuiltIn import BuiltIn
 from robot.running.namespace import IMPORTER
@@ -114,6 +114,30 @@ def match_libs(name=''):
     return matched
 
 
+def name_res(a_res):
+    """Name of a resource robotframework imported"""
+    # In contrast to a library in robotframework,
+    # a resource has no name. Let's take the source's file name. 
+    return a_res.source.split(os.sep)[-1:][0]
+
+
+def get_resources():
+    """Get resources robotframework imported"""
+    return sorted(IMPORTER._resource_cache._items, key=lambda _: name_res(_))
+
+
+def get_resources_as_dict():
+    """Get resources robotframework imported as a name -> lib dict"""
+    return {name_res(l): l for l in IMPORTER._resource_cache._items}
+
+
+def match_resources(name=''):
+    """Find resource by prefix of resource name, default all"""
+    ress = [name_res(_) for _ in get_resources()]
+    matched = [_ for _ in ress if _.lower().startswith(name.lower())]
+    return matched
+
+
 def memoize(function):
     """Memoization decorator"""
     memo = {}
@@ -140,6 +164,42 @@ class ImportedLibraryDocBuilder(LibraryDocBuilder):
         return libdoc
 
 
+class ImportedResourceDocBuilder(ResourceDocBuilder):
+    """
+    (Pdb) get_res_keywords(get_resources()[0])
+    *** AttributeError: 'ResourceFile' object has no attribute 'handlers'
+    
+    TILO: KeywordDocBuilder.build_keywords(self, lib) is not prepared for resources.
+    The constructor's variable 'resource' is not evaluated in 'build_keywords' function. 
+    """
+    def build(self, res):
+        libdoc = LibraryDoc(name=name_res(res),
+                            doc=res.doc,
+                            type='resource')
+        libdoc.keywords = ImportedKeywordDocBuilder(resource=True).build_keywords(res)
+        return libdoc
+
+
+class ImportedKeywordDocBuilder(KeywordDocBuilder):
+    """
+    (Pdb) get_res_keywords(get_resources()[0])
+    *** AttributeError: 'UserKeyword' object has no attribute 'arguments'
+
+    TILO: KeywordDocBuilder.build_keyword(self, kw) is not prepared for resources.
+    """
+    def build_keywords(self, lib):
+        return [self.build_keyword(kw) for kw in lib.keywords if self._resource]
+
+    def build_keyword(self, kw):
+        doc, tags = self._get_doc_and_tags(kw)
+        return KeywordDoc(
+            name=kw.name,
+            args=kw.args,
+            doc=doc,
+            tags=tags
+        )
+
+
 @memoize
 def get_lib_keywords(library):
     """Get keywords of imported library"""
@@ -153,10 +213,26 @@ def get_lib_keywords(library):
     return keywords
 
 
+@memoize
+def get_resource_keywords(resource):
+    """Get keywords of imported resource"""
+    res = ImportedResourceDocBuilder().build(resource)
+    keywords = []
+    for keyword in res.keywords:
+        doc = keyword.doc.split('\n')[0]
+        keywords.append({'name': keyword.name,
+                         'lib': name_res(resource),
+                         'doc': doc})
+    return keywords
+
+
 def get_keywords():
-    """Get all keywords of libraries"""
+    """Get all keywords of libraries and resources"""
     for lib in get_libs():
         for keyword in get_lib_keywords(lib):
+            yield keyword
+    for res in get_resources():
+        for keyword in get_resource_keywords(res):
             yield keyword
 
 
@@ -423,6 +499,8 @@ use the TAB keyboard key to autocomplete keywords.\
 
         PtkCmd.do_help(self, arg)
 
+    do_h = do_help
+
     def get_completer(self):
         """Get completer instance specified for robotframework"""
         # commands
@@ -437,6 +515,12 @@ use the TAB keyboard key to autocomplete keywords.\
                              lib.name,
                              'Library: {0} {1}'.format(lib.name, lib.version)))
 
+        # resources
+        for res in get_resources():
+            commands.append((name_res(res),
+                             name_res(res),
+                             'Resource: {0}'.format(name_res(res))))
+        
         # keywords
         for keyword in get_keywords():
             # name with library
@@ -525,6 +609,21 @@ use the TAB keyboard key to autocomplete keywords.\
 
     do_l = do_libs
 
+    def do_resources(self, args):
+        """Print imported resources, with source if `-s` specified.
+
+        r(esources) [-s]
+        """
+        print_output('<', 'Imported resources:')
+        for res in get_resources():
+            print('   {}'.format(name_res(res)))
+            if res.doc:
+                print('       {}'.format(res.doc.split('\n')[0]))
+            if '-s' in args:
+                print('       {}'.format(res.source))
+
+    do_r = do_resources
+
     def complete_libs(self, text, line, begin_idx, end_idx):
         """complete libs command"""
         if len(line.split()) == 1 and line.endswith(' '):
@@ -534,23 +633,30 @@ use the TAB keyboard key to autocomplete keywords.\
     complete_l = complete_libs
 
     def do_keywords(self, args):
-        """Print keywords of libraries, all or starts with <lib_name>
+        """Print keywords of libraries or resources, all or starts with <name>
 
-        k(eywords) [<lib_name>]
+        k(eywords) [<name>]
         """
-        lib_name = args
-        matched = match_libs(lib_name)
-        if not matched:
-            print_error('< not found library', lib_name)
+        lib_matched = match_libs(args)
+        res_matched = match_resources(args)
+        if not lib_matched and not res_matched:
+            print_error('< found neither library nor resource', args)
             return
         libs = get_libs_as_dict()
-        for name in matched:
+        for name in lib_matched:
             lib = libs[name]
             print_output('< Keywords of library', name)
             for keyword in get_lib_keywords(lib):
                 print_output('   {}\t'.format(keyword['name']),
                              keyword['doc'])
-
+        ress = get_resources_as_dict()
+        for name in res_matched:
+            res = ress[name]
+            print_output('< Keywords of resource', name)
+            for keyword in get_resource_keywords(res):
+                print_output('   {}\t'.format(keyword['name']),
+                             keyword['doc'])
+ 
     do_k = do_keywords
 
     def complete_keywords(self, text, line, begin_idx, end_idx):
