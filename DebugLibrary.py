@@ -172,7 +172,7 @@ class ImportedResourceDocBuilder(ResourceDocBuilder):
     """
     def build(self, res):
         libdoc = LibraryDoc(name=name_res(res),
-                            doc=res.doc,
+                            doc=self._get_doc(res),
                             type='resource')
         libdoc.keywords = ImportedKeywordDocBuilder(resource=True).build_keywords(res)
         return libdoc
@@ -610,7 +610,7 @@ use the TAB keyboard key to autocomplete keywords.\
                 print('       {}'.format(lib.doc.split('\n')[0]))
             if '-s' in args:
                 print('       {}'.format(lib.source))
-        print_output('<', 'Builtin libraries:')
+        print_output('<', 'Standard libraries available:')
         for name in sorted(list(STDLIBS)):
             print_output('   ' + name, '')
 
