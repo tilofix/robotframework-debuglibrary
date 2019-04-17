@@ -34,6 +34,7 @@ from robot.libraries.BuiltIn import BuiltIn
 from robot.running.namespace import IMPORTER
 from robot.running.signalhandler import STOP_SIGNAL_MONITOR
 from robot.variables import is_var
+from robot.utils import unescape
 
 __version__ = '1.1.4'
 
@@ -172,7 +173,7 @@ class ImportedResourceDocBuilder(ResourceDocBuilder):
     """
     def build(self, res):
         libdoc = LibraryDoc(name=name_res(res),
-                            doc=res.doc.split('\n')[0],
+                            doc=unescape(res.doc),
                             type='resource')
         libdoc.keywords = ImportedKeywordDocBuilder(resource=True).build_keywords(res)
         return libdoc
