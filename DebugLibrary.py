@@ -127,7 +127,7 @@ def get_resources():
 
 
 def get_resources_as_dict():
-    """Get resources robotframework imported as a name -> lib dict"""
+    """Get resources robotframework imported as a name -> res dict"""
     return {name_res(l): l for l in IMPORTER._resource_cache._items}
 
 
@@ -160,17 +160,15 @@ class ImportedLibraryDocBuilder(LibraryDocBuilder):
                             doc=self._get_doc(lib),
                             doc_format=lib.doc_format)
         libdoc.inits = self._get_initializers(lib)
-        libdoc.keywords = KeywordDocBuilder().build_keywords(lib)
+        libdoc.keywords = ImportedKeywordDocBuilder(resource=False).build_keywords(lib)
         return libdoc
 
 
 class ImportedResourceDocBuilder(ResourceDocBuilder):
-    """
-    (Pdb) get_res_keywords(get_resources()[0])
-    *** AttributeError: 'ResourceFile' object has no attribute 'handlers'
-    
-    TILO: KeywordDocBuilder.build_keywords(self, lib) is not prepared for resources.
-    The constructor's variable 'resource' is not evaluated in 'build_keywords' function. 
+    """ Is a ResourceDocBuilder class with public method overwritten.
+
+    Like ImportedLibraryDocBuilder public method build() overwritten 
+    to pass already imported resource object as parameter 'res' to method build().
     """
     def build(self, res):
         libdoc = LibraryDoc(name=name_res(res),
@@ -181,20 +179,29 @@ class ImportedResourceDocBuilder(ResourceDocBuilder):
 
 
 class ImportedKeywordDocBuilder(KeywordDocBuilder):
-    """
-    (Pdb) get_res_keywords(get_resources()[0])
-    *** AttributeError: 'UserKeyword' object has no attribute 'arguments'
+    """ Is a KeywordDocBuilder class with public methods overwritten.
 
-    TILO: KeywordDocBuilder.build_keyword(self, kw) is not prepared for resources.
+    Public methods build_keyword(s) overwritten to add support 
+    for keywords imported not only from libraries but also from resources.
+    Class KeywordDocBuilder is prepared to differentiate between 
+    resources and libraries, see variable self._resource.
+    Class KeywordDocBuilder actually did not differentiate.
     """
     def build_keywords(self, lib):
-        return [self.build_keyword(kw) for kw in lib.keywords if self._resource]
-
+        if self._resource:
+            return [self.build_keyword(kw) for kw in lib.keywords]
+        else:
+            return [self.build_keyword(kw) for kw in lib.handlers]
+   
     def build_keyword(self, kw):
         doc, tags = self._get_doc_and_tags(kw)
+        if self._resource:
+            args = kw.args
+        else:
+            args = self._get_args(kw.arguments)
         return KeywordDoc(
             name=kw.name,
-            args=kw.args,
+            args=args,
             doc=doc,
             tags=tags
         )
