@@ -626,7 +626,7 @@ use the TAB keyboard key to autocomplete keywords.\
         for res in get_resources():
             print('   {}'.format(name_res(res)))
             if res.doc:
-                print('       {}'.format(res.doc.split('\n')[0]))
+                print('       {}'.format(unescape(res.doc).split('\n')[0]))
             if '-s' in args:
                 print('       {}'.format(res.source))
 
