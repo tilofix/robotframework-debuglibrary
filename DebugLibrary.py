@@ -173,7 +173,7 @@ class ImportedResourceDocBuilder(ResourceDocBuilder):
     """
     def build(self, res):
         libdoc = LibraryDoc(name=name_res(res),
-                            doc=unescape(res.doc),
+                            doc=unescape(res.doc).split('\n')[0],
                             type='resource')
         libdoc.keywords = ImportedKeywordDocBuilder(resource=True).build_keywords(res)
         return libdoc
